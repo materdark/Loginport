@@ -19,6 +19,8 @@ import com.example.springboot_team.utils.RegexUtils;
 import com.example.springboot_team.utils.ResultCodeEnum;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +46,8 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
     private JwtHelper jwtHelper;
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+    @Resource
+    private RedissonClient redissonClient;
     @Override
     public Result phoneLogin(LoginPhoneDto loginPhoneDto) {
         //先判断用户的手机号码格式是否正确
@@ -92,21 +96,36 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
         return userPhone;
     }
     public Boolean RegisterPhoneUserRedis(LoginPhoneDto loginPhoneDto,Long expireSeconds){
-        String key=CACHE_PHONE_KEY+loginPhoneDto.getPhone();
-        //从redis查询账号数据
-        String Json=stringRedisTemplate.opsForValue().get(key);
-        if(!(StrUtil.isBlank(Json))){
-            //3.如果存在，直接返回
+        RLock lock = redissonClient.getLock("lock:order:" + loginPhoneDto.getPhone());
+        boolean isLock = lock.tryLock();
+        if(!isLock){
+            // 获取锁失败，返回错误或重试
+            log.error("已经有线程在使用了");
             return false;
         }
-        //封装逻辑过期
-        RedisData redisData=new RedisData();
-        redisData.setData(loginPhoneDto.getPhone());
-        redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
-        //写入Redis
-        stringRedisTemplate.opsForValue().set(CACHE_PHONE_KEY+loginPhoneDto.getPhone(),
-                JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
-        return true;
+        try {
+            String key = CACHE_PHONE_KEY + loginPhoneDto.getPhone();
+            //从redis查询账号数据
+            String Json = stringRedisTemplate.opsForValue().get(key);
+            if (!(StrUtil.isBlank(Json))) {
+                //3.如果存在，直接返回
+                return false;
+            }
+            //封装逻辑过期
+            RedisData redisData = new RedisData();
+            redisData.setData(loginPhoneDto.getPhone());
+            redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
+            //写入Redis
+            stringRedisTemplate.opsForValue().set(CACHE_PHONE_KEY + loginPhoneDto.getPhone(),
+                    JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
+            return true;
+        }
+        finally {
+            if (lock.isLocked() && lock.isHeldByCurrentThread()){
+                // 释放锁
+                lock.unlock();
+            }
+        }
     }
 }
 
