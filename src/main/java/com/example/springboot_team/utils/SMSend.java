@@ -26,8 +26,8 @@ public class SMSend {
     static final String domain = "dysmsapi.aliyuncs.com";
 
     // TODO 此处需要替换成开发者自己的AK(在阿里云访问控制台寻找)
-    static final String accessKeyId = "LTAI5tMgGwKNCFaCRxrfA7qT";
-    static final String accessKeySecret = "kL9EQydDETJ4XePDjFqPMWcgUuC0tE";
+    static final String accessKeyId = "LTAI5tAu5VKbTcdVRP4UeDzn";
+    static final String accessKeySecret = "CBDuvBK5NLT6hfNuQzrD9XLnWExSdW";
 
     public static SendSmsResponse sendSms(String phone,String code) throws ClientException {
 

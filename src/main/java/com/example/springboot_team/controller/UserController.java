@@ -36,11 +36,6 @@ public class UserController {
 //        Result result=userListService.getUserInfo(token);
 //        return  result;
 //    }
-    @PostMapping("checkUserName")
-    public Result checkUserName(String username){
-        Result result = userListService.checkUserName(username);
-        return result;
-    }
 
     @PostMapping("register")
     public Result register(@RequestBody  user_list userList){

@@ -63,6 +63,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      *   3.对比，密码 ，失败 返回503的错误
      *   4.根据用户id生成一个token, token -> result 返回
      */
+    @Transactional
     @Override
     public Result login(user_list userList) {
         //直接从redis中获取信息，而非mysql中获取信息
@@ -71,7 +72,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
         if (!StringUtils.isEmpty(userList.getPassword())
                 && MD5Util.encrypt(userList.getPassword()).equals(loginUserRedis.getPassword())){
             //生成相应的token
-            String token = jwtHelper.createToken(Long.valueOf(loginUserRedis.getUid()));
+            String token = jwtHelper.createToken(Long.valueOf(RandomUtil.randomNumbers(2)));
             //将前端接收到的数据转到userDto中
             UserDto userDto=new UserDto();
             userDto.setUsername(userList.getUsername());
@@ -91,57 +92,6 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             return Result.ok(data);
         }
         return Result.build(null,ResultCodeEnum.PASSWORD_ERROR);
-    }
-    /**
-     * 根据token获取用户数据
-     *
-     *  1. token是否在有效期
-     *  2. 根据token解析userId
-     *  3. 根据用户id查询用数据
-     *  4. 去掉密码，封装result结果返回即可
-     *
-     * @param token
-     * @return
-     */
-//    @Override
-//    public Result getUserInfo(String token) {
-//        //是否过期 true过期
-//        boolean expiration = jwtHelper.isExpiration(token);
-//
-//        if (expiration) {
-//            //失效，未登录看待
-//            return Result.build(null,ResultCodeEnum.NOTLOGIN);
-//        }
-//
-//        int userId = jwtHelper.getUserId(token).intValue();
-//        user_list user = userListMapper.selectById(userId);
-////        user.setPassword("");
-//
-//        Map data = new HashMap();
-//        data.put("loginUser",user);
-//
-//        return Result.ok(data);
-//    }
-
-    /**
-     * 检查账号是否可用
-     *   1.根据账号进行count查询
-     *   2.count == 0 可用
-     *   3.count > 0 不可用
-     * @param username 账号
-     * @return
-     */
-
-    @Override
-    public Result checkUserName(String username) {
-        LambdaQueryWrapper<user_list> lambdaQueryWrapper = new LambdaQueryWrapper<>();
-        lambdaQueryWrapper.eq(user_list::getUsername,username);
-        Long count = userListMapper.selectCount(lambdaQueryWrapper);
-
-        if (count == 0) {
-            return Result.ok(null);
-        }
-        return Result.build(null, USERNAME_USED);
     }
     /**
      * 注册业务
@@ -343,26 +293,6 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                       JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
               return true;
           }
-    /**判断当前登录时间与上次登录时间是否在同个月
-     * 如果是同个月则当前次数加一，不是则清零为1
-     * */
-    public int isMoth(Date currentTime,Date lastTime){
-        Calendar calendar1 = Calendar.getInstance();
-        Calendar calendar2=Calendar.getInstance();
-        calendar1.setTime(currentTime);
-        calendar2.setTime(lastTime);
-        int year1 =calendar1.get(Calendar.YEAR);
-        int year2 =calendar2.get(Calendar.YEAR);
-        int month1 =calendar1.get(Calendar.MONTH);
-        int month2 =calendar2.get(Calendar.MONTH);
-        if(year1==year2 && month1== month2){
-            userTimeCount+=1;
-        }
-        else {
-            userTimeCount=1;
-        }
-        return  userTimeCount;
-    }
 }
 
 
