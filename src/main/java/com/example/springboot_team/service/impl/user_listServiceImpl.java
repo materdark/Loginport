@@ -34,6 +34,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static com.example.springboot_team.utils.Constants.*;
+import static com.example.springboot_team.utils.ResultCodeEnum.USERNAME_USED;
 import static com.example.springboot_team.utils.SMSend.sendSms;
 
 /**
@@ -57,51 +58,25 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
     /**
      * 登录业务
      *
-     *   1.根据账号，查询用户对象  - loginUser
+     *   1.根据账号，通过redis查询用户对象  - loginUserRedis
      *   2.如果用户对象为null，查询失败，账号错误！ 501
      *   3.对比，密码 ，失败 返回503的错误
      *   4.根据用户id生成一个token, token -> result 返回
      */
     @Override
     public Result login(user_list userList) {
-        //当用户登录次数超过5个时说明为热点数据，此时从redis获取用户的相关数据
-        if(userTimeCount>=5){
-            user_list loginUserRedis=queryWithLogicalExpire(userList.getUsername());
-            String token = jwtHelper.createToken(Long.valueOf(loginUserRedis.getUid()));
-            Map data = new HashMap();
-            data.put("token",token);
-            data.put("userTimeCount",userTimeCount);
-            data.put("redis","Yes");
-            return Result.ok(data);
-        }
-        LambdaQueryWrapper<user_list> lambdaQueryWrapper_login = new LambdaQueryWrapper<>();
-        lambdaQueryWrapper_login.eq(user_list::getUsername,userList.getUsername());
-        //先查询redis缓存中是否有账号
-        //根据账号查询数据
-        user_list loginUser = userListMapper.selectOne(lambdaQueryWrapper_login);
-        if (loginUser == null) {
-            return Result.build(null, ResultCodeEnum.USERNAME_ERROR);
-        }
-
-        //对比密码
+        //直接从redis中获取信息，而非mysql中获取信息
+        user_list loginUserRedis=queryWithLogicalExpire(userList.getUsername());
+        //查看用户的密码是否存在且正确
         if (!StringUtils.isEmpty(userList.getPassword())
-                && MD5Util.encrypt(userList.getPassword()).equals(loginUser.getPassword())){
-            //获取当前的时间
-            Date currentTime=new Date();
-            //判断当前时间与上个次登录的时间是否在一个月以内
-            userTimeCount = isMoth(currentTime, lastTime);
-            lastTime=currentTime;
-            //如果一个月内用户登录的次数大于等于5次，则将他作为热点数据进行保存
-            if(userTimeCount==5){
-                saveUserRedis(userList.getUsername(),CACHE_USER_TTL);
-            }
-            //登录成功
-            //根据用户id生成 token
-            //生成用户登录的token令牌
-            String token = jwtHelper.createToken(Long.valueOf(loginUser.getUid()));
+                && MD5Util.encrypt(userList.getPassword()).equals(loginUserRedis.getPassword())){
+            //生成相应的token
+            String token = jwtHelper.createToken(Long.valueOf(loginUserRedis.getUid()));
+            //将前端接收到的数据转到userDto中
             UserDto userDto=new UserDto();
             userDto.setUsername(userList.getUsername());
             userDto.setPassword(userList.getPassword());
+            //以哈希表的形式存入
             Map<String,String> usermap=new HashMap<>();
             usermap.put("username",userDto.getUsername());
             usermap.put("password",userDto.getPassword());
@@ -113,11 +88,8 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             //将token封装到result返回
             Map data = new HashMap();
             data.put("token",token);
-            data.put("userTimeCount",userTimeCount);
             return Result.ok(data);
         }
-
-        //密码错误
         return Result.build(null,ResultCodeEnum.PASSWORD_ERROR);
     }
     /**
@@ -159,6 +131,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      * @param username 账号
      * @return
      */
+
     @Override
     public Result checkUserName(String username) {
         LambdaQueryWrapper<user_list> lambdaQueryWrapper = new LambdaQueryWrapper<>();
@@ -168,32 +141,31 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
         if (count == 0) {
             return Result.ok(null);
         }
-        return Result.build(null,ResultCodeEnum.USERNAME_USED);
+        return Result.build(null, USERNAME_USED);
     }
     /**
      * 注册业务
-     *  1.依然检查账号是否已经被注册
-     *  2.密码加密处理
-     *  3.账号数据保存
+     *  1.先在redis中插入数据
+     *  2.然后在mysql中同步更新数据
+     *  3.如果redis中用户已经存在，返回用户已经存在的结果
      *  4.返回结果
      * @param userList
      * @return
      */
     @Override
+    @Transactional//保证数据库操作的原子性
     public Result register(user_list userList) {
-
-        LambdaQueryWrapper<user_list> queryWrapper
-                = new LambdaQueryWrapper<>();
-        queryWrapper.eq(user_list::getUsername,userList.getUsername());
-        Long count = userListMapper.selectCount(queryWrapper);
-        if (count > 0) {
-            return Result.build(null,ResultCodeEnum.USERNAME_USED);
-        }
-
+        //将接收到的数据进行浅拷贝,放入userDto中
+        UserDto userDto=new UserDto();
+        userDto.setUsername(userList.getUsername());
         userList.setPassword(MD5Util.encrypt(userList.getPassword()));
-
+        userDto.setPassword(userList.getPassword());
+        Boolean flag=RegisterUserRedis(userDto,CACHE_USER_TTL);
+        if(flag==false){
+            return Result.build(null,USERNAME_USED);
+        }
+        //数据库中插入数据
         userListMapper.insert(userList);
-
         return Result.ok(null);
     }
     /**
@@ -341,7 +313,6 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      *  3.写入redis缓存中
      * @return
      */
-
         public void saveUserRedis(String username,Long expireSeconds){
             LambdaQueryWrapper<user_list> lambdaQueryWrapper = new LambdaQueryWrapper<>();
            //查询账号
@@ -355,6 +326,23 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
           stringRedisTemplate.opsForValue().set(CACHE_USER_KEY+loginUser.getUsername(),
                 JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
     }
+          public Boolean RegisterUserRedis(UserDto loginUser,Long expireSeconds){
+              String key=CACHE_USER_KEY+loginUser.getUsername();
+              //从redis查询账号数据
+              String Json=stringRedisTemplate.opsForValue().get(key);
+              if(!(StrUtil.isBlank(Json))){
+                  //3.如果存在，直接返回
+                  return false;
+              }
+              //封装逻辑过期
+              RedisData redisData=new RedisData();
+              redisData.setData(loginUser);
+              redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
+              //写入Redis
+              stringRedisTemplate.opsForValue().set(CACHE_USER_KEY+loginUser.getUsername(),
+                      JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
+              return true;
+          }
     /**判断当前登录时间与上次登录时间是否在同个月
      * 如果是同个月则当前次数加一，不是则清零为1
      * */

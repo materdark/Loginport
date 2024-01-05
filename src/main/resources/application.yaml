@@ -20,7 +20,7 @@ spring:
     redis:
       host: r-2vciqp8wrks5e6l0z6pd.redis.cn-chengdu.rds.aliyuncs.com
       port: 6379
-      password: AnImE13658096590
+      password: gFSVohWG20n
       lettuce:
         pool:
           max-active: 10
