@@ -1,12 +1,9 @@
 package com.example.springboot_team.controller;
 
 import com.aliyuncs.exceptions.ClientException;
-import com.example.springboot_team.dto.LoginPhoneDto;
-import com.example.springboot_team.dto.QuitDto;
-import com.example.springboot_team.dto.UserChangeDto;
+import com.example.springboot_team.dto.*;
 import com.example.springboot_team.pojo.user_list;
 import com.example.springboot_team.service.user_listService;
-import com.example.springboot_team.dto.Result;
 import com.example.springboot_team.service.user_phoneService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -27,8 +24,8 @@ public class UserController {
     private user_phoneService userPhoneService;
 
     @PostMapping("login")
-    public Result login(@RequestBody user_list userList){
-        Result result = userListService.login(userList);
+    public Result login(@RequestBody UserDto userDto){
+        Result result = userListService.login(userDto);
         return result;
     }
 //    @GetMapping("getUserInfo")

@@ -68,24 +68,20 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      */
     @Transactional
     @Override
-    public Result login(user_list userList) {
+    public Result login(UserDto userDto) {
         //直接从redis中获取信息，而非mysql中获取信息
-        user_list loginUserRedis=queryWithLogicalExpire(userList.getUsername());
+        user_list loginUserRedis=queryWithLogicalExpire(userDto.getUsername());
         //查看用户的密码是否存在且正确
-        if (!StringUtils.isEmpty(userList.getPassword())
-                && MD5Util.encrypt(userList.getPassword()).equals(loginUserRedis.getPassword())){
+        if (!StringUtils.isEmpty(userDto.getPassword())
+                && MD5Util.encrypt(userDto.getPassword()).equals(loginUserRedis.getPassword())){
             //生成相应的token
-            String token = jwtHelper.createToken(userList.getUsername());
-            //将前端接收到的数据转到userDto中
-            UserDto userDto=new UserDto();
-            userDto.setUsername(userList.getUsername());
-            userDto.setPassword(userList.getPassword());
+            String token = jwtHelper.createToken(userDto.getUsername());
             //以哈希表的形式存入
             Map<String,String> usermap=new HashMap<>();
             usermap.put("username",userDto.getUsername());
             usermap.put("password",userDto.getPassword());
             usermap.put("token",token);
-            String tokenKey = LOGIN_USER_KEY + userList.getUsername();
+            String tokenKey = LOGIN_USER_KEY + userDto.getUsername();
             //存入token中
             stringRedisTemplate.opsForHash().putAll(tokenKey, usermap);
             // 7.4.设置token有效期

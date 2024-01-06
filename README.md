@@ -6,11 +6,12 @@ url地址：http://localhost:3000/frontapi/user/login
 请求工具：PostMan  
 请求方式：POST 
 请求参数格式：JSON  
-注意事项：
+注意事项：fingerPrintJs为浏览器指纹，有点类似mac地址
 响应参数：  
 {  
 "username":"123",  
-"password":"123"  
+"password":"123",
+ "fingerPrintJs":"XXX"
 }  
 响应数据：
 成功  
@@ -18,7 +19,7 @@ url地址：http://localhost:3000/frontapi/user/login
 "code": 200,  
 "message": "测试成功",  
 "data": {  
-"token": ""  
+"token": "XXX"  
 }  
 }  
 失败：  

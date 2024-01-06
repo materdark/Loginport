@@ -8,4 +8,5 @@ public class UserDto {
     private String phoneNumber;
     private String username;
     private String password;
+    private String fingerPrintJs;
 }
