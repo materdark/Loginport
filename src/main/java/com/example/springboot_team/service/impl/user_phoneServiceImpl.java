@@ -71,14 +71,15 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
             userPhone = createUserWithPhone(phone);
         }
         // 生成token
-        String token = jwtHelper.createToken(Long.valueOf(RandomUtil.randomNumbers(2)));
+        String token = jwtHelper.createToken(loginPhoneDto.getPhone());
         // 7.2.将User对象转为HashMap存储
         UserDto userDTO=new UserDto();
         userDTO.setPhoneNumber(phone);
         Map<String,String> userMap=new HashMap<>();
         userMap.put("phoneNumber",userDTO.getPhoneNumber());
-        // 7.3.存储
-        String tokenKey = LOGIN_PHONE_KEY+ token;
+        userMap.put("token",token);
+        // 7.3.这里采用的是与用户登录相同的数据库，目的是保证拦截器读取的token都位于同样的位置，无需专门区分
+        String tokenKey = LOGIN_USER_KEY+ userDTO.getPhoneNumber();
         stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
         // 7.4.设置token有效期
         stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.MINUTES);

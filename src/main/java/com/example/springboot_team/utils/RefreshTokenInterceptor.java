@@ -4,6 +4,7 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.example.springboot_team.dto.FlagDto;
 import com.example.springboot_team.dto.UserDto;
+import jakarta.annotation.Resource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -17,6 +18,8 @@ import static com.example.springboot_team.utils.Constants.LOGIN_USER_KEY;
 import static com.example.springboot_team.utils.Constants.LOGIN_USER_TTL;
 @CrossOrigin
 public class RefreshTokenInterceptor implements HandlerInterceptor {
+    @Resource
+    private JwtHelper jwtHelper;
 
     private StringRedisTemplate stringRedisTemplate;
 
@@ -40,8 +43,10 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
         if (StrUtil.isBlank(token)) {
             return true;
         }
+        //从token中读取用户名
+        String username= jwtHelper.getUsername(token);
         // 2.基于TOKEN获取redis中的用户
-        String key  = LOGIN_USER_KEY + token;
+        String key  = LOGIN_USER_KEY + username;
         Map<Object, Object> userMap = stringRedisTemplate.opsForHash().entries(key);
         // 3.判断用户是否存在
         if (userMap.isEmpty()) {

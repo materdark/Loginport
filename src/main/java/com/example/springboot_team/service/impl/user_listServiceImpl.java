@@ -75,7 +75,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
         if (!StringUtils.isEmpty(userList.getPassword())
                 && MD5Util.encrypt(userList.getPassword()).equals(loginUserRedis.getPassword())){
             //生成相应的token
-            String token = jwtHelper.createToken(Long.valueOf(RandomUtil.randomNumbers(2)));
+            String token = jwtHelper.createToken(userList.getUsername());
             //将前端接收到的数据转到userDto中
             UserDto userDto=new UserDto();
             userDto.setUsername(userList.getUsername());
@@ -84,7 +84,8 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             Map<String,String> usermap=new HashMap<>();
             usermap.put("username",userDto.getUsername());
             usermap.put("password",userDto.getPassword());
-            String tokenKey = LOGIN_USER_KEY + token;
+            usermap.put("token",token);
+            String tokenKey = LOGIN_USER_KEY + userList.getUsername();
             //存入token中
             stringRedisTemplate.opsForHash().putAll(tokenKey, usermap);
             // 7.4.设置token有效期
