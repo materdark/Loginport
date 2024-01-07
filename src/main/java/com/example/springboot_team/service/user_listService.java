@@ -21,7 +21,7 @@ public interface user_listService extends IService<user_list> {
 
 //    Result getUserInfo(String token);
 
-    Result register(user_list userList);
+    Result register(UserDto userDto);
 
     Result sendCode(String phone) throws ClientException;
 

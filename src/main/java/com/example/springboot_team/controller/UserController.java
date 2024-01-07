@@ -35,8 +35,8 @@ public class UserController {
 //    }
 
     @PostMapping("register")
-    public Result register(@RequestBody  user_list userList){
-        Result result = userListService.register(userList);
+    public Result register(@RequestBody  UserDto userDto){
+        Result result = userListService.register(userDto);
         return result;
     }
     @PostMapping("code")

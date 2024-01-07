@@ -10,7 +10,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class SpringbootTeamApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(SpringbootTeamApplication.class, args);
+        /*
+         * 指定使用的日志框架，否则将会报错
+         * RocketMQLog:WARN No appenders could be found for logger (io.netty.util.internal.InternalThreadLocalMap).
+         * RocketMQLog:WARN Please initialize the logger system properly.
+         */
+        System.setProperty("rocketmq.client.logUseSlf4j", "true");
+        SpringApplication.run(SpringbootTeamApplication.class, args
+        );
     }
 
     @GetMapping("/")

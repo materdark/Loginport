@@ -1,6 +1,5 @@
 package com.example.springboot_team.service.impl;
 
-import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
@@ -10,6 +9,7 @@ import com.aliyuncs.dysmsapi.model.v20170525.SendSmsResponse;
 import com.aliyuncs.exceptions.ClientException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.example.springboot_team.Regex.RegexUtils;
 import com.example.springboot_team.dto.QuitDto;
 import com.example.springboot_team.dto.Result;
 import com.example.springboot_team.dto.UserChangeDto;
@@ -20,17 +20,23 @@ import com.example.springboot_team.service.user_listService;
 import com.example.springboot_team.utils.*;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.rocketmq.client.producer.SendCallback;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.apache.rocketmq.spring.support.RocketMQHeaders;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Calendar;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -58,6 +64,9 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
     private JwtHelper jwtHelper;
     @Resource
     private RedissonClient redissonClient;
+    @Resource
+    private RocketMQTemplate rocketMQTemplate;
+
     /**
      * 登录业务
      *
@@ -99,21 +108,24 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      *  2.然后在mysql中同步更新数据
      *  3.如果redis中用户已经存在，返回用户已经存在的结果
      *  4.返回结果
-     * @param userList
+     * @param
      * @return
      */
     @Override
     @Transactional//保证数据库操作的原子性
-    public Result register(user_list userList) {
+    public Result register(UserDto userDto) {
         //将接收到的数据进行浅拷贝,放入userDto中
-        UserDto userDto=new UserDto();
-        userDto.setUsername(userList.getUsername());
-        userList.setPassword(MD5Util.encrypt(userList.getPassword()));
-        userDto.setPassword(userList.getPassword());
+
+        userDto.setPassword(MD5Util.encrypt(userDto.getPassword()));
         Boolean flag=RegisterUserRedis(userDto,CACHE_USER_TTL);
         if(flag==false){
             return Result.build(null,USERNAME_USED);
         }
+        //redis更新完后将信息通过生产者传给消费者，消费者负责执行剩下的部分
+        RegisterSendMsg(userDto);
+        user_list userList=new user_list();
+        userList.setPassword(userDto.getPassword());
+        userList.setUsername(userDto.getUsername());
         //数据库中插入数据
         userListMapper.insert(userList);
         return Result.ok(null);
@@ -310,6 +322,20 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                   }
               }
           }
+
+    public void RegisterSendMsg(UserDto userDto){
+        rocketMQTemplate.asyncSend("bootTestTopic", userDto.toString(), new SendCallback() {
+            @Override
+            public void onSuccess(SendResult sendResult) {
+
+            }
+
+            @Override
+            public void onException(Throwable throwable) {
+
+            }
+        });
+    }
     public Boolean passwordChangeUserRedis(UserChangeDto userChangeDto,Long expireSeconds){
         RLock lock = redissonClient.getLock("lock:order:" + userChangeDto.getUsername());
         boolean isLock = lock.tryLock();

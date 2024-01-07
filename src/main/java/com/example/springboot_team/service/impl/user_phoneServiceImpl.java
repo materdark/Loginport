@@ -1,9 +1,5 @@
 package com.example.springboot_team.service.impl;
 
-import cn.hutool.core.bean.BeanUtil;
-import cn.hutool.core.bean.copier.CopyOptions;
-import cn.hutool.core.lang.UUID;
-import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -15,7 +11,7 @@ import com.example.springboot_team.mapper.user_phoneMapper;
 import com.example.springboot_team.dto.Result;
 import com.example.springboot_team.utils.JwtHelper;
 import com.example.springboot_team.utils.RedisData;
-import com.example.springboot_team.utils.RegexUtils;
+import com.example.springboot_team.Regex.RegexUtils;
 import com.example.springboot_team.utils.ResultCodeEnum;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;

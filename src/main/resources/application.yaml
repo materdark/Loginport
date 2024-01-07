@@ -50,3 +50,44 @@ jwt:
   token:
     tokenExpiration: 120 #有效时间,单位分钟
     tokenSignKey: headline123456  #当前程序签名秘钥 自定义
+#rocketmq的配置，用于异步解耦，提高性能
+rocketmq:
+  name-server: 8.137.103.138:9876 # 访问地址
+  producer:
+    # 发送同一类消息的设置为同一个group，保证唯一
+    group: springboot_producer_group
+    # 发送消息失败重试次数，默认2
+    retryTimesWhenSendFailed: 2
+    # 异步消息重试此处，默认2
+    retryTimesWhenSendAsyncFailed: 2
+    # 发送消息超时时间，默认3000
+    sendMessageTimeout: 3000
+    # 消息最大长度，默认1024 * 1024 * 4(默认4M)
+    maxMessageSize: 4096
+    # 压缩消息阈值，默认4k(1024 * 4)
+    compressMessageBodyThreshold: 4096
+    # 是否在内部发送失败时重试另一个broker，默认false
+    retryNextServer: false
+    # access-key
+    #accessKey: xxx
+    # secret-key
+    #secretKey: xxx
+    # 是否启用消息跟踪，默认false
+    enableMsgTrace: false
+    # 消息跟踪主题的名称值。如果不进行配置，可以使用默认的跟踪主题名称
+    customizedTraceTopic: RMQ_SYS_TRACE_TOPIC
+  consumer:
+    # 配置指定group是否启动监听器 group1.topic1 = false
+    listeners:
+      # key：group名称
+      rocketmq_source_code_group:
+        # value：{key: topic名称: value: true/false}
+        rocketmq_source_code: true
+    # 指定消费组
+    group: springboot_consumer_group
+    # 指定topic，启动时就会注册
+    #topic: springboot_consumer_xxx
+    # 一次拉取消息最大值，注意是拉取消息的最大值而非消费最大值
+    pull-batch-size: 10
+    # 其他配置参考属性类
+
