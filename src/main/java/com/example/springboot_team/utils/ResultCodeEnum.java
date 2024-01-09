@@ -11,6 +11,7 @@ public enum ResultCodeEnum {
     PASSWORD_ERROR(503,"密码错误"),
     NOTLOGIN(504,"notLogin"),
     USERNAME_USED(505,"用户已经存在"),
+    USERNAME_NULL(506,"用户不存在"),
     PHONE_ERROR(403,"手机格式错误"),
     SERVE_ERROR(404,"存在异常"),
     CODE_ERROR(409,"验证码错误");

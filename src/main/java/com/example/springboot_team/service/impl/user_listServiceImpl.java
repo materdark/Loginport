@@ -14,36 +14,30 @@ import com.example.springboot_team.dto.QuitDto;
 import com.example.springboot_team.dto.Result;
 import com.example.springboot_team.dto.UserChangeDto;
 import com.example.springboot_team.dto.UserDto;
+import com.example.springboot_team.kafka.utils.KafkaSendResultHandler;
+import com.example.springboot_team.kafka.domain.MessageMock;
 import com.example.springboot_team.mapper.user_listMapper;
 import com.example.springboot_team.pojo.user_list;
 import com.example.springboot_team.service.user_listService;
 import com.example.springboot_team.utils.*;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.rocketmq.client.producer.SendCallback;
-import org.apache.rocketmq.client.producer.SendResult;
-import org.apache.rocketmq.spring.core.RocketMQTemplate;
-import org.apache.rocketmq.spring.support.RocketMQHeaders;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static com.example.springboot_team.utils.Constants.*;
-import static com.example.springboot_team.utils.ResultCodeEnum.PASSWORD_ERROR;
-import static com.example.springboot_team.utils.ResultCodeEnum.USERNAME_USED;
+import static com.example.springboot_team.utils.ResultCodeEnum.*;
 import static com.example.springboot_team.utils.SMSend.sendSms;
 
 /**
@@ -65,7 +59,9 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
     @Resource
     private RedissonClient redissonClient;
     @Resource
-    private RocketMQTemplate rocketMQTemplate;
+    private KafkaTemplate<Object, Object> kafkaTemplate;
+    @Resource
+    private KafkaSendResultHandler producerListener;
 
     /**
      * 登录业务
@@ -80,9 +76,13 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
     public Result login(UserDto userDto) {
         //直接从redis中获取信息，而非mysql中获取信息
         user_list loginUserRedis=queryWithLogicalExpire(userDto.getUsername());
+        if(loginUserRedis==null){
+            return Result.build(null,USERNAME_NULL);
+        }
+        userDto.setPassword(MD5Util.encrypt(userDto.getPassword()));
         //查看用户的密码是否存在且正确
         if (!StringUtils.isEmpty(userDto.getPassword())
-                && MD5Util.encrypt(userDto.getPassword()).equals(loginUserRedis.getPassword())){
+                && userDto.getPassword().equals(loginUserRedis.getPassword())){
             //生成相应的token
             String token = jwtHelper.createToken(userDto.getUsername());
             //以哈希表的形式存入
@@ -115,19 +115,24 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
     @Transactional//保证数据库操作的原子性
     public Result register(UserDto userDto) {
         //将接收到的数据进行浅拷贝,放入userDto中
-
         userDto.setPassword(MD5Util.encrypt(userDto.getPassword()));
         Boolean flag=RegisterUserRedis(userDto,CACHE_USER_TTL);
         if(flag==false){
             return Result.build(null,USERNAME_USED);
         }
         //redis更新完后将信息通过生产者传给消费者，消费者负责执行剩下的部分
-        RegisterSendMsg(userDto);
-        user_list userList=new user_list();
-        userList.setPassword(userDto.getPassword());
-        userList.setUsername(userDto.getUsername());
-        //数据库中插入数据
-        userListMapper.insert(userList);
+        //检验生产者发送的信息是否成功
+        MessageMock messageMock=new MessageMock();
+        messageMock.setUserDto(userDto);
+        //将自定义的信息序列化
+        String message=JSONUtil.toJsonStr(messageMock);
+        kafkaTemplate.setProducerListener(producerListener);
+        kafkaTemplate.send("my-topic",message);
+//        user_list userList=new user_list();
+//        userList.setPassword(userDto.getPassword());
+//        userList.setUsername(userDto.getUsername());
+//        //数据库中插入数据
+//        userListMapper.insert(userList);
         return Result.ok(null);
     }
     /**
@@ -198,28 +203,6 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
         return Result.ok(null);
     }
 
-    /**获取锁函数
-     * 1.获取相应的锁
-     * 2.装箱并返回结果
-     * */
-
-
-//    private boolean tryLock(String key){
-//        Boolean flag=stringRedisTemplate.opsForValue().setIfAbsent(key,"1",0,TimeUnit.SECONDS);
-//        return BooleanUtil.isTrue(flag);//装箱操作，因为flag会被拆箱，flag不应该是null
-//    }
-//
-//    /**释放锁函数
-//     * redis中直接删除即可
-//     * */
-//
-//    //释放锁
-//    private void  unlock(String key){
-//        stringRedisTemplate.delete(key);
-//    }
-//    /**生成一个线程池,容纳100个线程
-//     * */
-
     private  static  final ExecutorService CACHE_REBUILD_EXECUTOR= Executors.newFixedThreadPool(100);
     /**查询用户缓存的逻辑过期
      * 1.如果用户未存在缓存中，直接返回null
@@ -231,10 +214,25 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
         String key=CACHE_USER_KEY+username;
         //从redis查询账号缓存
         String Json=stringRedisTemplate.opsForValue().get(key);
-        //2.判断是否存在
+        //2.判断是否存在于redis中
         if(StrUtil.isBlank(Json)){
-            //3.不存在，直接返回
-            return null;
+            //这里没有使用两个函数而是直接用，是因为mysql的连接很耗费性能，共用一个连接比较节省性能
+            LambdaQueryWrapper<user_list> lambdaQueryWrapper = new LambdaQueryWrapper<>();
+            lambdaQueryWrapper.eq(user_list::getUsername,username);
+            user_list userList = userListMapper.selectOne(lambdaQueryWrapper);
+            //3.判断是否存在于mysql中。这里使用两层if嵌套，
+            // 纠结了很久,最后认为采用两层的性能在一般情况下，性能比复合条件语句高，因为触发两层循环的条件概率比较小
+            //复合条件使用的话无论如何都比触发第一层条件消耗的性能大
+            //如果mysql中也没有的话，直接返回null
+            if(userList==null){
+                return null;
+            }
+            //如果mysql中有的话，进行将mysql中的数据库重新写入redis中的操作
+            else {
+                this.saveUserRedis(username,20L);
+                //将数据存储到redis中后，将查到的mysql数据返回
+                return userList;
+            }
         }
         //4.命中，需要先把json反序列化为对象
         RedisData redisData = JSONUtil.toBean(Json, RedisData.class);
@@ -246,29 +244,13 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             return userList;
         }
         //5.2已过期，需要进行缓存重建
-        //6缓存重建
-        //6.1获取互斥锁
-        RLock lock = redissonClient.getLock("lock:order:" + username);
-        boolean isLock = lock.tryLock();
-        //6.2判断是否获取锁成功
-        if (isLock) {
-            //6.3成功，开启独立线程，实现缓存重建
-            CACHE_REBUILD_EXECUTOR.submit(()->{
-                try {
-                    this.saveUserRedis(username,20L);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                } finally {
-                    if (lock.isLocked() && lock.isHeldByCurrentThread()) {
-                        //释放锁
-                        lock.unlock();
-                    }
-                }
-            });
-
-        }
-        //6.4返回过期的用户信息
+         this.saveUserRedis(username,20L);
+        //6.4获取锁失败的用户返回过期的用户信息，获取锁成功的用户返回更新后的用户信息
          return userList;
+    }
+    /***/
+    public void loginMysqlFromRedis(){
+
     }
     /**
      * 写入redis缓存服务
@@ -278,17 +260,39 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      * @return
      */
         public void saveUserRedis(String username,Long expireSeconds){
-            LambdaQueryWrapper<user_list> lambdaQueryWrapper = new LambdaQueryWrapper<>();
-           //查询账号
-         lambdaQueryWrapper.eq(user_list::getUsername,username);
-         user_list loginUser = userListMapper.selectOne(lambdaQueryWrapper);
-          //封装逻辑过期
-          RedisData redisData=new RedisData();
-          redisData.setData(loginUser);
-          redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
-          //写入Redis
-          stringRedisTemplate.opsForValue().set(CACHE_USER_KEY+loginUser.getUsername(),
-                JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
+            //获取互斥锁,进行缓存重建
+            RLock lock = redissonClient.getLock("lock:order:" + username);
+            boolean isLock = lock.tryLock();
+            if (isLock) {
+                //6.3成功，开启独立线程，实现缓存重建
+                CACHE_REBUILD_EXECUTOR.submit(()->{
+                    try {
+                        LambdaQueryWrapper<user_list> lambdaQueryWrapper = new LambdaQueryWrapper<>();
+                        //查询账号
+                        lambdaQueryWrapper.eq(user_list::getUsername,username);
+                        user_list loginUser = userListMapper.selectOne(lambdaQueryWrapper);
+                        //密码进行加密
+                        loginUser.setPassword(MD5Util.encrypt(loginUser.getPassword()));
+                        //封装逻辑过期
+                        RedisData redisData=new RedisData();
+                        redisData.setData(loginUser);
+                        redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
+                        //写入Redis
+                        stringRedisTemplate.opsForValue().set(CACHE_USER_KEY+loginUser.getUsername(),
+                                JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
+                    }
+                    catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                    finally {
+                        //判断是否释放线程锁的是否为获取线程锁的那个线程，防止其他线程过来解锁
+                        if (lock.isLocked() && lock.isHeldByCurrentThread()) {
+                            //释放锁
+                            lock.unlock();
+                        }
+                    }
+                });
+            }
     }
           public Boolean RegisterUserRedis(UserDto loginUser,Long expireSeconds){
               RLock lock = redissonClient.getLock("lock:order:" + loginUser.getUsername());
@@ -323,19 +327,6 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
               }
           }
 
-    public void RegisterSendMsg(UserDto userDto){
-        rocketMQTemplate.asyncSend("bootTestTopic", userDto.toString(), new SendCallback() {
-            @Override
-            public void onSuccess(SendResult sendResult) {
-
-            }
-
-            @Override
-            public void onException(Throwable throwable) {
-
-            }
-        });
-    }
     public Boolean passwordChangeUserRedis(UserChangeDto userChangeDto,Long expireSeconds){
         RLock lock = redissonClient.getLock("lock:order:" + userChangeDto.getUsername());
         boolean isLock = lock.tryLock();

@@ -25,11 +25,5 @@ class SpringbootTeamApplicationTests {
          String username=jwtHelper.getUsername("");
          System.out.println(username);
      }
-     @Test
-    void contextLoad(){
-         System.out.println("我是生产者");
-         rocketMQTemplate.syncSend("bootTestTopic","我是同步消息");
-     }
-
 
 }
