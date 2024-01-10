@@ -24,7 +24,7 @@ public class UserController {
     private user_phoneService userPhoneService;
 
     @PostMapping("login")
-    public Result login(@RequestBody UserDto userDto){
+    public Result login(@RequestBody UserDto userDto) throws InterruptedException {
         Result result = userListService.login(userDto);
         return result;
     }
@@ -35,7 +35,7 @@ public class UserController {
 //    }
 
     @PostMapping("register")
-    public Result register(@RequestBody  UserDto userDto){
+    public Result register(@RequestBody  UserDto userDto)  {
         Result result = userListService.register(userDto);
         return result;
     }
@@ -48,7 +48,7 @@ public class UserController {
         return userPhoneService.phoneLogin(loginPhoneDto);
     }
     @PostMapping("passwordChange")
-    public Result passwordChange(@RequestBody UserChangeDto userChangeDto){
+    public Result passwordChange(@RequestBody UserChangeDto userChangeDto)  {
         return  userListService.passwordChange(userChangeDto);
     }
     @PostMapping ("quit")

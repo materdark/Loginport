@@ -5,6 +5,8 @@ import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.springboot_team.dto.LoginPhoneDto;
 import com.example.springboot_team.dto.UserDto;
+import com.example.springboot_team.kafka.domain.MessageMock;
+import com.example.springboot_team.kafka.utils.KafkaSendResultHandler;
 import com.example.springboot_team.pojo.user_phone;
 import com.example.springboot_team.service.user_phoneService;
 import com.example.springboot_team.mapper.user_phoneMapper;
@@ -18,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +30,8 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static com.example.springboot_team.utils.Constants.*;
+import static com.example.springboot_team.utils.ResultCodeEnum.THREAD_EXIST;
+import static com.example.springboot_team.utils.ResultCodeEnum.USERNAME_USED;
 
 /**
  * @author chenz
@@ -44,6 +49,10 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
     private StringRedisTemplate stringRedisTemplate;
     @Resource
     private RedissonClient redissonClient;
+    @Resource
+    private KafkaTemplate<Object, Object> kafkaTemplate;
+    @Resource
+    private KafkaSendResultHandler producerListener;
     @Override
     public Result phoneLogin(LoginPhoneDto loginPhoneDto) {
         //先判断用户的手机号码格式是否正确
@@ -56,33 +65,48 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
         String cacheCode = stringRedisTemplate.opsForValue().get(LOGIN_CODE_KEY + phone);
         String code = loginPhoneDto.getCode();
         //从redis中查询数据
-        Boolean flag=RegisterPhoneUserRedis(loginPhoneDto,CACHE_PHONE_TTL);
+       String flag=RegisterPhoneUserRedis(loginPhoneDto,CACHE_PHONE_TTL);
         if (cacheCode == null || !cacheCode.equals(code)) {
             // 不一致，报错
             return Result.build(null,ResultCodeEnum.CODE_ERROR);
         }
-        if(flag==true){
-            //flag为true,说明用户不存在，此时redis中已经存入了用户信息，数据库中需要同步更新一下
-            user_phone userPhone=new user_phone();
-            userPhone = createUserWithPhone(phone);
+        switch (flag){
+            case "threadUsed":
+               return Result.build(null,THREAD_EXIST);
+            case "redisUserExist":
+                return Result.build(null,USERNAME_USED);
+            case "redisRebuild":
+                //flag为redisRebuild,说明用户不存在，此时redis中已经存入了用户信息，数据库中需要异步更新一下
+                //检验生产者发送的信息是否成功
+                MessageMock messageMock=new MessageMock();
+                user_phone userPhone=new user_phone();
+                //将手机注册用户的手机号传入生产者发送信息中
+                userPhone.setPhonenumber(loginPhoneDto.getPhone());
+                messageMock.setUserPhone(userPhone);
+                //将自定义的信息序列化
+                String message=JSONUtil.toJsonStr(messageMock);
+                //设置异步失败回调函数
+                kafkaTemplate.setProducerListener(producerListener);
+                kafkaTemplate.send("loginPhoneTopic",message);
+                // 生成token
+                String token = jwtHelper.createToken(loginPhoneDto.getPhone());
+                // 7.2.将User对象转为HashMap存储
+                UserDto userDTO=new UserDto();
+                userDTO.setPhoneNumber(phone);
+                Map<String,String> userMap=new HashMap<>();
+                userMap.put("phoneNumber",userDTO.getPhoneNumber());
+                userMap.put("token",token);
+                // 7.3.这里采用的是与用户登录相同的数据库，目的是保证拦截器读取的token都位于同样的位置，无需专门区分
+                String tokenKey = LOGIN_USER_KEY+ userDTO.getPhoneNumber();
+                stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
+                // 7.4.设置token有效期
+                stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.MINUTES);
+                Map data = new HashMap();
+                data.put("token",token);
+                return Result.ok(data);
         }
-        // 生成token
-        String token = jwtHelper.createToken(loginPhoneDto.getPhone());
-        // 7.2.将User对象转为HashMap存储
-        UserDto userDTO=new UserDto();
-        userDTO.setPhoneNumber(phone);
-        Map<String,String> userMap=new HashMap<>();
-        userMap.put("phoneNumber",userDTO.getPhoneNumber());
-        userMap.put("token",token);
-        // 7.3.这里采用的是与用户登录相同的数据库，目的是保证拦截器读取的token都位于同样的位置，无需专门区分
-        String tokenKey = LOGIN_USER_KEY+ userDTO.getPhoneNumber();
-        stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
-        // 7.4.设置token有效期
-        stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.MINUTES);
-        Map data = new HashMap();
-        data.put("token",token);
-        return Result.ok(data);
-
+        //只是单纯防止idea报错
+        return Result.ok(null);
     }
     private user_phone createUserWithPhone(String phone) {
         // 1.创建用户
@@ -92,13 +116,13 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
         save(userPhone);
         return userPhone;
     }
-    public Boolean RegisterPhoneUserRedis(LoginPhoneDto loginPhoneDto,Long expireSeconds){
+    public String RegisterPhoneUserRedis(LoginPhoneDto loginPhoneDto,Long expireSeconds){
         RLock lock = redissonClient.getLock("lock:order:" + loginPhoneDto.getPhone());
         boolean isLock = lock.tryLock();
         if(!isLock){
             // 获取锁失败，返回错误或重试
             log.error("已经有线程在使用了");
-            return false;
+            return "threadUsed";
         }
         try {
             String key = CACHE_PHONE_KEY + loginPhoneDto.getPhone();
@@ -106,7 +130,7 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
             String Json = stringRedisTemplate.opsForValue().get(key);
             if (!(StrUtil.isBlank(Json))) {
                 //3.如果存在，直接返回
-                return false;
+                return"redisUserExist";
             }
             //封装逻辑过期
             RedisData redisData = new RedisData();
@@ -115,7 +139,7 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
             //写入Redis
             stringRedisTemplate.opsForValue().set(CACHE_PHONE_KEY + loginPhoneDto.getPhone(),
                     JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
-            return true;
+            return "redisRebuild";
         }
         finally {
             if (lock.isLocked() && lock.isHeldByCurrentThread()){

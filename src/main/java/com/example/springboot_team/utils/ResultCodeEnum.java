@@ -14,7 +14,9 @@ public enum ResultCodeEnum {
     USERNAME_NULL(506,"用户不存在"),
     PHONE_ERROR(403,"手机格式错误"),
     SERVE_ERROR(404,"存在异常"),
-    CODE_ERROR(409,"验证码错误");
+    CODE_ERROR(409,"验证码错误"),
+    THREAD_EXIST(301,"线程已经存在"),
+    LOCK_ERRO(302,"锁异常");
 
     private Integer code;
     private String message;

@@ -17,7 +17,7 @@ import java.io.Serializable;
 */
 public interface user_listService extends IService<user_list> {
 
-    Result login(UserDto userDto);
+    Result login(UserDto userDto) ;
 
 //    Result getUserInfo(String token);
 

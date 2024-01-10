@@ -62,6 +62,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
     private KafkaTemplate<Object, Object> kafkaTemplate;
     @Resource
     private KafkaSendResultHandler producerListener;
+    private LambdaQueryWrapper<user_list> lambdaQueryWrapper=new LambdaQueryWrapper<>();
 
     /**
      * 登录业务
@@ -73,7 +74,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      */
     @Transactional
     @Override
-    public Result login(UserDto userDto) {
+    public Result login(UserDto userDto)  {
         //直接从redis中获取信息，而非mysql中获取信息
         user_list loginUserRedis=queryWithLogicalExpire(userDto.getUsername());
         if(loginUserRedis==null){
@@ -116,23 +117,27 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
     public Result register(UserDto userDto) {
         //将接收到的数据进行浅拷贝,放入userDto中
         userDto.setPassword(MD5Util.encrypt(userDto.getPassword()));
-        Boolean flag=RegisterUserRedis(userDto,CACHE_USER_TTL);
-        if(flag==false){
-            return Result.build(null,USERNAME_USED);
+        String flag=RegisterUserRedis(userDto,CACHE_USER_TTL);
+        //使用switch而非多个if语句是因为分支的判断条件越多，switch 性能高的特性体现的就越明显。
+        //这主要涉及到底层硬件
+        switch(flag){
+            case "redisUserExist":
+                return Result.build(null,USERNAME_USED);
+            case "threadUsed":
+                return Result.build(null,THREAD_EXIST);
+            case "redisRebuild":
+                //redis更新完后将信息通过生产者传给消费者，消费者负责执行剩下的部分
+                //检验生产者发送的信息是否成功
+                MessageMock messageMock=new MessageMock();
+                messageMock.setUserDto(userDto);
+                //将自定义的信息序列化
+                String message=JSONUtil.toJsonStr(messageMock);
+                //设置异步失败回调函数
+                kafkaTemplate.setProducerListener(producerListener);
+                kafkaTemplate.send("registerTopic",message);
+                return Result.ok(null);
         }
-        //redis更新完后将信息通过生产者传给消费者，消费者负责执行剩下的部分
-        //检验生产者发送的信息是否成功
-        MessageMock messageMock=new MessageMock();
-        messageMock.setUserDto(userDto);
-        //将自定义的信息序列化
-        String message=JSONUtil.toJsonStr(messageMock);
-        kafkaTemplate.setProducerListener(producerListener);
-        kafkaTemplate.send("my-topic",message);
-//        user_list userList=new user_list();
-//        userList.setPassword(userDto.getPassword());
-//        userList.setUsername(userDto.getUsername());
-//        //数据库中插入数据
-//        userListMapper.insert(userList);
+        //不加的话会报错
         return Result.ok(null);
     }
     /**
@@ -174,20 +179,29 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      */
 
     @Override
-    public Result passwordChange(UserChangeDto userChangeDto) {
-        Boolean flag=passwordChangeUserRedis(userChangeDto,CACHE_USER_TTL);
-        if(flag==false){
-            return Result.build(null,PASSWORD_ERROR);
+    public Result passwordChange(UserChangeDto userChangeDto)  {
+        String flag=passwordChangeUserRedis(userChangeDto,CACHE_USER_TTL);
+        switch (flag){
+            case "threadUsed":
+                return Result.build(null,THREAD_EXIST);
+            case "passwordError":
+                return Result.build(null,PASSWORD_ERROR);
+                //锁的异常可以加也可以不加，无关紧要
+            case "lockError":
+                return Result.build(null,LOCK_ERRO);
+            case "redisRebuild":
+                //检验生产者发送的信息是否成功
+                MessageMock messageMock=new MessageMock();
+                messageMock.setUserChangeDto(userChangeDto);
+                //将自定义的信息序列化
+                String message=JSONUtil.toJsonStr(messageMock);
+                //设置异步失败回调函数
+                kafkaTemplate.setProducerListener(producerListener);
+                kafkaTemplate.send("passwordChangeTopic",message);
+                return  Result.ok(null);
         }
-        else {
-            LambdaQueryWrapper<user_list> lambdaQueryWrapper = new LambdaQueryWrapper<>();
-            lambdaQueryWrapper.eq(user_list::getUsername,userChangeDto.getUsername());
-            user_list userPasswordChange = userListMapper.selectOne(lambdaQueryWrapper);
-            //更新密码
-            userPasswordChange.setPassword(MD5Util.encrypt(userChangeDto.getNew_password()));
-            userListMapper.update(userPasswordChange,lambdaQueryWrapper);
-            return  Result.ok(null);
-        }
+        //主要是防止报错
+        return Result.ok(null);
     }
     /**
      * 退出登录服务
@@ -210,14 +224,14 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      * 3.返回缓存结果
      * */
 
-    public user_list queryWithLogicalExpire(String username){
+    public user_list queryWithLogicalExpire(String username)  {
         String key=CACHE_USER_KEY+username;
         //从redis查询账号缓存
         String Json=stringRedisTemplate.opsForValue().get(key);
         //2.判断是否存在于redis中
         if(StrUtil.isBlank(Json)){
-            //这里没有使用两个函数而是直接用，是因为mysql的连接很耗费性能，共用一个连接比较节省性能
-            LambdaQueryWrapper<user_list> lambdaQueryWrapper = new LambdaQueryWrapper<>();
+            LambdaQueryWrapper<user_list> lambdaQueryWrapper=new LambdaQueryWrapper<>();
+            //这里没有使用两个lambdaQueryWrapper而是直接用同一个，是因为mysql的连接很耗费性能，共用一个连接比较节省性能
             lambdaQueryWrapper.eq(user_list::getUsername,username);
             user_list userList = userListMapper.selectOne(lambdaQueryWrapper);
             //3.判断是否存在于mysql中。这里使用两层if嵌套，
@@ -229,7 +243,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             }
             //如果mysql中有的话，进行将mysql中的数据库重新写入redis中的操作
             else {
-                this.saveUserRedis(username,20L);
+                this.saveUserRedis(userList,20L);
                 //将数据存储到redis中后，将查到的mysql数据返回
                 return userList;
             }
@@ -244,13 +258,9 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             return userList;
         }
         //5.2已过期，需要进行缓存重建
-         this.saveUserRedis(username,20L);
+         this.saveUserRedis(userList,20L);
         //6.4获取锁失败的用户返回过期的用户信息，获取锁成功的用户返回更新后的用户信息
          return userList;
-    }
-    /***/
-    public void loginMysqlFromRedis(){
-
     }
     /**
      * 写入redis缓存服务
@@ -259,26 +269,25 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      *  3.写入redis缓存中
      * @return
      */
-        public void saveUserRedis(String username,Long expireSeconds){
+        public void saveUserRedis(user_list userList,Long expireSeconds) {
             //获取互斥锁,进行缓存重建
-            RLock lock = redissonClient.getLock("lock:order:" + username);
+            RLock lock = redissonClient.getLock("lock:order:" + userList.getUsername());
             boolean isLock = lock.tryLock();
             if (isLock) {
                 //6.3成功，开启独立线程，实现缓存重建
                 CACHE_REBUILD_EXECUTOR.submit(()->{
                     try {
-                        LambdaQueryWrapper<user_list> lambdaQueryWrapper = new LambdaQueryWrapper<>();
-                        //查询账号
-                        lambdaQueryWrapper.eq(user_list::getUsername,username);
-                        user_list loginUser = userListMapper.selectOne(lambdaQueryWrapper);
-                        //密码进行加密
-                        loginUser.setPassword(MD5Util.encrypt(loginUser.getPassword()));
+                        //清空之前的查询条件
+                        lambdaQueryWrapper.clear();
+                        lambdaQueryWrapper.eq(user_list::getUsername,userList.getUsername());
+                        //从数据库中查询数据，将其同步更新到redis中
+                        user_list redisRebuild = userListMapper.selectOne(lambdaQueryWrapper);
                         //封装逻辑过期
                         RedisData redisData=new RedisData();
-                        redisData.setData(loginUser);
+                        redisData.setData(redisRebuild);
                         redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
                         //写入Redis
-                        stringRedisTemplate.opsForValue().set(CACHE_USER_KEY+loginUser.getUsername(),
+                        stringRedisTemplate.opsForValue().set(CACHE_USER_KEY+userList.getUsername(),
                                 JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
                     }
                     catch (Exception e) {
@@ -294,13 +303,13 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                 });
             }
     }
-          public Boolean RegisterUserRedis(UserDto loginUser,Long expireSeconds){
+          public String RegisterUserRedis(UserDto loginUser,Long expireSeconds){
               RLock lock = redissonClient.getLock("lock:order:" + loginUser.getUsername());
               boolean isLock = lock.tryLock();
               if(!isLock){
                   // 获取锁失败，返回错误或重试
                   log.error("已经有线程在使用了");
-                  return false;
+                  return "threadUsed";
               }
               try {
                   String key = CACHE_USER_KEY + loginUser.getUsername();
@@ -308,7 +317,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                   String Json = stringRedisTemplate.opsForValue().get(key);
                   if (!(StrUtil.isBlank(Json))) {
                       //3.如果存在，直接返回
-                      return false;
+                      return "redisUserExist";
                   }
                   //封装逻辑过期
                   RedisData redisData = new RedisData();
@@ -317,7 +326,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                   //写入Redis
                   stringRedisTemplate.opsForValue().set(CACHE_USER_KEY + loginUser.getUsername(),
                           JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
-                  return true;
+                  return "redisRebuild";
               }
               finally {
                   if (lock.isLocked() && lock.isHeldByCurrentThread()) {
@@ -327,13 +336,13 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
               }
           }
 
-    public Boolean passwordChangeUserRedis(UserChangeDto userChangeDto,Long expireSeconds){
+    public String passwordChangeUserRedis(UserChangeDto userChangeDto,Long expireSeconds) {
         RLock lock = redissonClient.getLock("lock:order:" + userChangeDto.getUsername());
         boolean isLock = lock.tryLock();
         if(!isLock){
             // 获取锁失败，返回错误或重试
             log.error("已经有线程在使用了");
-            return false;
+            return "threadUsed";
         }
         try {
             //从redis中获取信息
@@ -352,19 +361,22 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                 //写入Redis
                 stringRedisTemplate.opsForValue().set(CACHE_USER_KEY + loginUser.getUsername(),
                         JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
-                return true;
+                return "redisRebuild";
             }
-            return false;
+            return "passwordError";
             }
         catch (IllegalMonitorStateException e){
             log.error("出现锁异常");
-            return false;
+            return "lockError";
         }
         finally {
-            if (lock.isLocked() && lock.isHeldByCurrentThread()){
+            Boolean isLocker=lock.isLocked();
+            Boolean isHeld=lock.isHeldByCurrentThread();
+            if (isLocker && isHeld){
                 // 释放锁
                 lock.unlock();
             }
+            System.out.println("锁未被释放");
         }
     }
 }
