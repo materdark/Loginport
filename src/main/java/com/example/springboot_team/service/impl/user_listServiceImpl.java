@@ -271,7 +271,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      */
         public void saveUserRedis(user_list userList,Long expireSeconds) {
             //获取互斥锁,进行缓存重建
-            RLock lock = redissonClient.getLock("lock:order:" + userList.getUsername());
+            RLock lock = redissonClient.getLock("lock:redis:" + userList.getUsername());
             boolean isLock = lock.tryLock();
             if (isLock) {
                 //6.3成功，开启独立线程，实现缓存重建
@@ -304,7 +304,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             }
     }
           public String RegisterUserRedis(UserDto loginUser,Long expireSeconds){
-              RLock lock = redissonClient.getLock("lock:order:" + loginUser.getUsername());
+              RLock lock = redissonClient.getLock("lock:redis:" + loginUser.getUsername());
               boolean isLock = lock.tryLock();
               if(!isLock){
                   // 获取锁失败，返回错误或重试
@@ -329,6 +329,8 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                   return "redisRebuild";
               }
               finally {
+                  Boolean islocker=lock.isLocked();
+                  Boolean isH=lock.isHeldByCurrentThread();
                   if (lock.isLocked() && lock.isHeldByCurrentThread()) {
                       // 释放锁
                       lock.unlock();
@@ -337,7 +339,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
           }
 
     public String passwordChangeUserRedis(UserChangeDto userChangeDto,Long expireSeconds) {
-        RLock lock = redissonClient.getLock("lock:order:" + userChangeDto.getUsername());
+        RLock lock = redissonClient.getLock("lock:redis:" + userChangeDto.getUsername());
         boolean isLock = lock.tryLock();
         if(!isLock){
             // 获取锁失败，返回错误或重试
@@ -376,7 +378,6 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                 // 释放锁
                 lock.unlock();
             }
-            System.out.println("锁未被释放");
         }
     }
 }

@@ -73,8 +73,6 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
         switch (flag){
             case "threadUsed":
                return Result.build(null,THREAD_EXIST);
-            case "redisUserExist":
-                return Result.build(null,USERNAME_USED);
             case "redisRebuild":
                 //flag为redisRebuild,说明用户不存在，此时redis中已经存入了用户信息，数据库中需要异步更新一下
                 //检验生产者发送的信息是否成功
@@ -130,7 +128,7 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
             String Json = stringRedisTemplate.opsForValue().get(key);
             if (!(StrUtil.isBlank(Json))) {
                 //3.如果存在，直接返回
-                return"redisUserExist";
+                return"redisRebuild";
             }
             //封装逻辑过期
             RedisData redisData = new RedisData();

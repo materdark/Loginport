@@ -30,7 +30,7 @@ public class KafkaPasswordChangeConsumer {
     public void consume(String message){
         //将获取的Json对象进行反序列化操作
         MessageMock messageMock= JSONUtil.toBean(message, MessageMock.class);
-        RLock lock = redissonClient.getLock("lock:order:" + messageMock.getUserChangeDto().getUsername());
+        RLock lock = redissonClient.getLock("lock:mysql:" + messageMock.getUserChangeDto().getUsername());
         boolean isLock = lock.tryLock();
         if (isLock) {
             //6.3成功，开启独立线程，实现缓存重建

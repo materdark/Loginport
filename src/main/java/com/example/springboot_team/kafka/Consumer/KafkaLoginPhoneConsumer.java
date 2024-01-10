@@ -28,13 +28,13 @@ public class KafkaLoginPhoneConsumer {
     public void consume(String message){
         //将获取的Json对象进行反序列化操作
         MessageMock messageMock= JSONUtil.toBean(message, MessageMock.class);
-        RLock lock = redissonClient.getLock("lock:order:" + messageMock.getUserPhone().getPhonenumber());
+        RLock lock = redissonClient.getLock("lock:mysql:" + messageMock.getUserPhone().getPhonenumber());
         boolean isLock = lock.tryLock();
         if (isLock) {
             //6.3成功，开启独立线程，实现缓存重建
             CACHE_REBUILD_EXECUTOR.submit(()->{
                 try {
-                    //清除之前的查询条件
+                    //清空之前的查询条件
                     lambdaQueryWrapper.clear();
                     //为了防止消费堆积，导致数据库重复插入数据，插入前必须先检验一下数据库中是否有账号，如果没有就插入数据库
                     lambdaQueryWrapper.eq(user_phone::getPhonenumber,messageMock.getUserPhone().getPhonenumber());
