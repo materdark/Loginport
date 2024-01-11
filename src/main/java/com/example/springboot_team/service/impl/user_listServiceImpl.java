@@ -159,11 +159,12 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
         String code = RandomUtil.randomNumbers(6);
         //连接阿里云远程平台发送短信
         SendSmsResponse sendSms = sendSms(phone,code);
-        // 4.保存验证码到 redis中
-        stringRedisTemplate.opsForValue().set(LOGIN_CODE_KEY + phone, code, LOGIN_CODE_TTL, TimeUnit.MINUTES);
-
-        // 5.发送验证码
-        log.debug("发送短信验证码成功，验证码：{}");
+        // 4.保存验证码到 redis中，以哈希结构的形式
+        Map<String,String> codeMap=new HashMap<>();
+        codeMap.put("code",code);
+        String codeKey=LOGIN_CODE_KEY + phone;
+        stringRedisTemplate.opsForHash().putAll(codeKey,codeMap);
+        stringRedisTemplate.expire(codeKey,LOGIN_CODE_TTL,TimeUnit.MINUTES);
         // 返回ok
         return Result.ok(null);
     }

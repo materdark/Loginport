@@ -5,16 +5,13 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.example.springboot_team.dto.LoginPhoneDto;
-import com.example.springboot_team.dto.UserDto;
+import com.example.springboot_team.dto.*;
 import com.example.springboot_team.kafka.domain.MessageMock;
 import com.example.springboot_team.kafka.utils.KafkaSendResultHandler;
 import com.example.springboot_team.pojo.user_phone;
 import com.example.springboot_team.service.user_phoneService;
 import com.example.springboot_team.mapper.user_phoneMapper;
-import com.example.springboot_team.dto.Result;
 import com.example.springboot_team.utils.JwtHelper;
-import com.example.springboot_team.dto.RedisDataTime;
 import com.example.springboot_team.Regex.RegexUtils;
 import com.example.springboot_team.utils.ResultCodeEnum;
 import jakarta.annotation.Resource;
@@ -69,12 +66,22 @@ public class user_phoneServiceImpl extends ServiceImpl<user_phoneMapper, user_ph
             return Result.build(null, ResultCodeEnum.PHONE_ERROR);
         }
         // 3.从redis获取验证码并校验
-        String cacheCode = stringRedisTemplate.opsForValue().get(LOGIN_CODE_KEY + phone);
+        //将查到的哈希数据取出来
+        String codeKey=LOGIN_CODE_KEY + phone;
+        Map<Object,Object> codeMap=stringRedisTemplate.opsForHash().entries(codeKey);
+        CodeDto codeDto=BeanUtil.fillBeanWithMap(codeMap,new CodeDto(),false);
+        //如果redis中没有，则报错返回
+        if(codeDto==null){
+            return Result.build(null,ResultCodeEnum.CODE_ERROR);
+        }
+        //从redis中获得key
+        String cacheCode = codeDto.getCode();
+        //前端发送的key
         String code = loginPhoneDto.getCode();
         //从redis中查询数据
        String flag=RegisterPhoneUserRedis(loginPhoneDto,CACHE_PHONE_TTL);
-        if (cacheCode == null || !cacheCode.equals(code)) {
-            // 不一致，报错
+        if (!cacheCode.equals(code)) {
+            // 验证码不一致，报错返回
             return Result.build(null,ResultCodeEnum.CODE_ERROR);
         }
         switch (flag){
