@@ -1,7 +1,7 @@
-package com.example.springboot_team.utils;
+package com.example.springboot_team.utils.Interceptor;
 
 import com.example.springboot_team.dto.FlagDto;
-import com.example.springboot_team.dto.UserDto;
+//用于存储本地线程
 
 public class OptionsHolder {
     private static final ThreadLocal<FlagDto> tl = new ThreadLocal<>();

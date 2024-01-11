@@ -1,4 +1,4 @@
-package com.example.springboot_team.utils;
+package com.example.springboot_team.utils.encryption;
 
 import com.alibaba.druid.util.StringUtils;
 import io.jsonwebtoken.*;

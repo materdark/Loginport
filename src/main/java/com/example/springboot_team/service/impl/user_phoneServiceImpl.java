@@ -1,19 +1,18 @@
 package com.example.springboot_team.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
-import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.springboot_team.dto.*;
-import com.example.springboot_team.kafka.domain.MessageMock;
-import com.example.springboot_team.kafka.utils.KafkaSendResultHandler;
+import com.example.springboot_team.utils.kafka.domain.MessageMock;
+import com.example.springboot_team.utils.kafka.utils.KafkaSendResultHandler;
 import com.example.springboot_team.pojo.user_phone;
 import com.example.springboot_team.service.user_phoneService;
 import com.example.springboot_team.mapper.user_phoneMapper;
-import com.example.springboot_team.utils.JwtHelper;
+import com.example.springboot_team.utils.encryption.JwtHelper;
 import com.example.springboot_team.Regex.RegexUtils;
-import com.example.springboot_team.utils.ResultCodeEnum;
+import com.example.springboot_team.utils.result.ResultCodeEnum;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
@@ -30,8 +29,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static com.example.springboot_team.utils.Constants.*;
-import static com.example.springboot_team.utils.ResultCodeEnum.THREAD_EXIST;
+import static com.example.springboot_team.utils.RedisConstants.*;
+import static com.example.springboot_team.utils.result.ResultCodeEnum.THREAD_EXIST;
 
 /**
  * @author chenz

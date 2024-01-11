@@ -1,4 +1,4 @@
-package com.example.springboot_team.utils;
+package com.example.springboot_team.utils.result;
 
 /**
  * 统一返回结果状态信息类

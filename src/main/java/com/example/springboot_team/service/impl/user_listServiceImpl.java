@@ -11,12 +11,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.springboot_team.Regex.RegexUtils;
 import com.example.springboot_team.dto.*;
-import com.example.springboot_team.kafka.utils.KafkaSendResultHandler;
-import com.example.springboot_team.kafka.domain.MessageMock;
+import com.example.springboot_team.utils.encryption.JwtHelper;
+import com.example.springboot_team.utils.encryption.MD5Util;
+import com.example.springboot_team.utils.kafka.utils.KafkaSendResultHandler;
+import com.example.springboot_team.utils.kafka.domain.MessageMock;
 import com.example.springboot_team.mapper.user_listMapper;
 import com.example.springboot_team.pojo.user_list;
 import com.example.springboot_team.service.user_listService;
-import com.example.springboot_team.utils.*;
+import com.example.springboot_team.utils.result.ResultCodeEnum;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
@@ -34,9 +36,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static com.example.springboot_team.utils.Constants.*;
-import static com.example.springboot_team.utils.ResultCodeEnum.*;
-import static com.example.springboot_team.utils.SMSend.sendSms;
+import static com.example.springboot_team.utils.RedisConstants.*;
+import static com.example.springboot_team.utils.result.ResultCodeEnum.*;
+import static com.example.springboot_team.utils.phone.SMSend.sendSms;
 
 /**
 * @author chenz
@@ -153,7 +155,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
         // 1.校验手机号
         if (RegexUtils.isPhoneInvalid(phone)) {
             // 2.如果不符合，返回错误信息
-            return Result.build(null,ResultCodeEnum.PHONE_ERROR);
+            return Result.build(null, ResultCodeEnum.PHONE_ERROR);
         }
         // 3.符合，生成验证码
         String code = RandomUtil.randomNumbers(6);

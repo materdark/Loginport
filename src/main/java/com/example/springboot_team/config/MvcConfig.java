@@ -1,7 +1,7 @@
 package com.example.springboot_team.config;
 
-import com.example.springboot_team.utils.LoginInterceptor;
-import com.example.springboot_team.utils.RefreshTokenInterceptor;
+import com.example.springboot_team.utils.Interceptor.LoginInterceptor;
+import com.example.springboot_team.utils.Interceptor.RefreshTokenInterceptor;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;

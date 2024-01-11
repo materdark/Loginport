@@ -1,6 +1,6 @@
 package com.example.springboot_team.dto;
 
-import com.example.springboot_team.utils.ResultCodeEnum;
+import com.example.springboot_team.utils.result.ResultCodeEnum;
 
 /**
  * 全局统一返回结果类

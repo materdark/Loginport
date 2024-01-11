@@ -1,4 +1,4 @@
-package com.example.springboot_team.kafka.utils;
+package com.example.springboot_team.utils.kafka.utils;
 
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;

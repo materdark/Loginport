@@ -1,6 +1,5 @@
-package com.example.springboot_team.utils;
+package com.example.springboot_team.utils.Interceptor;
 
-import com.example.springboot_team.dto.UserDto;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.servlet.HandlerInterceptor;

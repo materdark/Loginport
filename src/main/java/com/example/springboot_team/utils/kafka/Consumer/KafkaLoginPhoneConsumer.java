@@ -1,8 +1,8 @@
-package com.example.springboot_team.kafka.Consumer;
+package com.example.springboot_team.utils.kafka.Consumer;
 
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.springboot_team.kafka.domain.MessageMock;
+import com.example.springboot_team.utils.kafka.domain.MessageMock;
 import com.example.springboot_team.mapper.user_phoneMapper;
 import com.example.springboot_team.pojo.user_phone;
 import jakarta.annotation.Resource;

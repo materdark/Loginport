@@ -1,4 +1,4 @@
-package com.example.springboot_team.kafka.domain;
+package com.example.springboot_team.utils.kafka.domain;
 
 import com.example.springboot_team.dto.UserChangeDto;
 import com.example.springboot_team.dto.UserDto;

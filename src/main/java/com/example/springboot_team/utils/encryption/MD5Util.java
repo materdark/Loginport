@@ -1,4 +1,4 @@
-package com.example.springboot_team.utils;
+package com.example.springboot_team.utils.encryption;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
