@@ -1,8 +1,8 @@
 package com.example.springboot_team.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.alibaba.druid.util.StringUtils;
 import com.aliyuncs.dysmsapi.model.v20170525.SendSmsResponse;
@@ -10,10 +10,7 @@ import com.aliyuncs.exceptions.ClientException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.springboot_team.Regex.RegexUtils;
-import com.example.springboot_team.dto.QuitDto;
-import com.example.springboot_team.dto.Result;
-import com.example.springboot_team.dto.UserChangeDto;
-import com.example.springboot_team.dto.UserDto;
+import com.example.springboot_team.dto.*;
 import com.example.springboot_team.kafka.utils.KafkaSendResultHandler;
 import com.example.springboot_team.kafka.domain.MessageMock;
 import com.example.springboot_team.mapper.user_listMapper;
@@ -22,6 +19,7 @@ import com.example.springboot_team.service.user_listService;
 import com.example.springboot_team.utils.*;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -74,7 +72,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      */
     @Transactional
     @Override
-    public Result login(UserDto userDto)  {
+    public Result login(@NotNull UserDto userDto)  {
         //直接从redis中获取信息，而非mysql中获取信息
         user_list loginUserRedis=queryWithLogicalExpire(userDto.getUsername());
         if(loginUserRedis==null){
@@ -91,11 +89,11 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             usermap.put("username",userDto.getUsername());
             usermap.put("password",userDto.getPassword());
             usermap.put("token",token);
-            String tokenKey = LOGIN_USER_KEY + userDto.getUsername();
+            String RedisKey = LOGIN_USER_KEY + userDto.getUsername();
             //存入token中
-            stringRedisTemplate.opsForHash().putAll(tokenKey, usermap);
+            stringRedisTemplate.opsForHash().putAll(RedisKey, usermap);
             // 7.4.设置token有效期
-            stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.MINUTES);
+            stringRedisTemplate.expire(RedisKey, LOGIN_USER_TTL, TimeUnit.MINUTES);
             //将token封装到result返回
             Map data = new HashMap();
             data.put("token",token);
@@ -114,7 +112,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      */
     @Override
     @Transactional//保证数据库操作的原子性
-    public Result register(UserDto userDto) {
+    public Result register(@NotNull UserDto userDto) {
         //将接收到的数据进行浅拷贝,放入userDto中
         userDto.setPassword(MD5Util.encrypt(userDto.getPassword()));
         String flag=RegisterUserRedis(userDto,CACHE_USER_TTL);
@@ -211,13 +209,13 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      * */
 
     @Override
-    public Result quit(QuitDto quitDto) {
+    public Result quit(@NotNull QuitDto quitDto) {
         String tokenKey=LOGIN_USER_KEY+quitDto.getToken();
         stringRedisTemplate.delete(tokenKey);
         return Result.ok(null);
     }
 
-    private  static  final ExecutorService CACHE_REBUILD_EXECUTOR= Executors.newFixedThreadPool(100);
+    private  static  final ExecutorService CACHE_REBUILD_EXECUTOR= Executors.newFixedThreadPool(10);
     /**查询用户缓存的逻辑过期
      * 1.如果用户未存在缓存中，直接返回null
      * 2.如果过期则进行缓存重建
@@ -226,10 +224,10 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
 
     public user_list queryWithLogicalExpire(String username)  {
         String key=CACHE_USER_KEY+username;
-        //从redis查询账号缓存
-        String Json=stringRedisTemplate.opsForValue().get(key);
+        //从redis中取出哈希结构的用户数据以及逻辑过期时间
+        Map<Object,Object> userMap=stringRedisTemplate.opsForHash().entries(key);
         //2.判断是否存在于redis中
-        if(StrUtil.isBlank(Json)){
+        if(userMap.isEmpty()){
             LambdaQueryWrapper<user_list> lambdaQueryWrapper=new LambdaQueryWrapper<>();
             //这里没有使用两个lambdaQueryWrapper而是直接用同一个，是因为mysql的连接很耗费性能，共用一个连接比较节省性能
             lambdaQueryWrapper.eq(user_list::getUsername,username);
@@ -243,15 +241,20 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             }
             //如果mysql中有的话，进行将mysql中的数据库重新写入redis中的操作
             else {
-                this.saveUserRedis(userList,20L);
+                this.saveUserRedis(userList,CACHE_USER_TTL);
                 //将数据存储到redis中后，将查到的mysql数据返回
                 return userList;
             }
         }
+        //将查询到的hash数据转为UserDto
+        UserDto userDto= BeanUtil.fillBeanWithMap(userMap,new UserDto(),false);
         //4.命中，需要先把json反序列化为对象
-        RedisData redisData = JSONUtil.toBean(Json, RedisData.class);
-        user_list userList = JSONUtil.toBean((JSONObject) redisData.getData(), user_list.class);
-        LocalDateTime expireTime = redisData.getExpireTime();
+        RedisDataTime redisDataTime=JSONUtil.toBean(userDto.getRedisDataTime(), RedisDataTime.class);
+        //获取逻辑过期时间
+        LocalDateTime expireTime = redisDataTime.getExpireTime();
+        user_list userList=new user_list();
+        userList.setPassword(userDto.getPassword());
+        userList.setUsername(userDto.getUsername());
         //5.判读是否过期
         if (expireTime.isAfter(LocalDateTime.now())) {
           //5.1未过期，直接返回账号信息
@@ -269,7 +272,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      *  3.写入redis缓存中
      * @return
      */
-        public void saveUserRedis(user_list userList,Long expireSeconds) {
+        public void saveUserRedis(@NotNull user_list userList, Long expireSeconds) {
             //获取互斥锁,进行缓存重建
             RLock lock = redissonClient.getLock("lock:redis:" + userList.getUsername());
             boolean isLock = lock.tryLock();
@@ -282,13 +285,17 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                         lambdaQueryWrapper.eq(user_list::getUsername,userList.getUsername());
                         //从数据库中查询数据，将其同步更新到redis中
                         user_list redisRebuild = userListMapper.selectOne(lambdaQueryWrapper);
-                        //封装逻辑过期
-                        RedisData redisData=new RedisData();
-                        redisData.setData(redisRebuild);
-                        redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
-                        //写入Redis
-                        stringRedisTemplate.opsForValue().set(CACHE_USER_KEY+userList.getUsername(),
-                                JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
+                        //将数据以哈希结构的形式存入,进行逻辑过期封装
+                        Map<String,String> usermap=new HashMap<>();
+                        usermap.put("username",redisRebuild.getUsername());
+                        usermap.put("password",redisRebuild.getPassword());
+                        //之所以又加一个对象接收逻辑过期是因为，直接序列化时间类会序列化失败，原因不清楚
+                        RedisDataTime redisDataTime=new RedisDataTime();
+                        redisDataTime.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
+                        //插入定义好的逻辑过期时间
+                        usermap.put("redisDataTime",JSONUtil.toJsonStr(redisDataTime));
+                        String RedisKey=CACHE_USER_KEY + redisRebuild.getUsername();
+                        stringRedisTemplate.opsForHash().putAll(RedisKey, usermap);
                     }
                     catch (Exception e) {
                         throw new RuntimeException(e);
@@ -303,7 +310,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                 });
             }
     }
-          public String RegisterUserRedis(UserDto loginUser,Long expireSeconds){
+          public String RegisterUserRedis(@NotNull UserDto loginUser, Long expireSeconds){
               RLock lock = redissonClient.getLock("lock:redis:" + loginUser.getUsername());
               boolean isLock = lock.tryLock();
               if(!isLock){
@@ -319,18 +326,21 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                       //3.如果存在，直接返回
                       return "redisUserExist";
                   }
-                  //封装逻辑过期
-                  RedisData redisData = new RedisData();
-                  redisData.setData(loginUser);
-                  redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
-                  //写入Redis
-                  stringRedisTemplate.opsForValue().set(CACHE_USER_KEY + loginUser.getUsername(),
-                          JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
+                  //将数据以哈希结构的形式存入,进行逻辑过期封装
+                  Map<String,String> usermap=new HashMap<>();
+                  usermap.put("username",loginUser.getUsername());
+                  usermap.put("password",loginUser.getPassword());
+                  //之所以又加一个对象接收逻辑过期是因为，直接序列化时间类会序列化失败，原因不清楚
+                  RedisDataTime redisDataTime=new RedisDataTime();
+                  redisDataTime.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
+                  //插入定义好的逻辑过期时间
+                  usermap.put("redisDataTime",JSONUtil.toJsonStr(redisDataTime));
+                  String RedisKey=CACHE_USER_KEY + loginUser.getUsername();
+                  //写入redis中
+                  stringRedisTemplate.opsForHash().putAll(RedisKey, usermap);
                   return "redisRebuild";
               }
               finally {
-                  Boolean islocker=lock.isLocked();
-                  Boolean isH=lock.isHeldByCurrentThread();
                   if (lock.isLocked() && lock.isHeldByCurrentThread()) {
                       // 释放锁
                       lock.unlock();
@@ -338,7 +348,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
               }
           }
 
-    public String passwordChangeUserRedis(UserChangeDto userChangeDto,Long expireSeconds) {
+    public String passwordChangeUserRedis(@NotNull UserChangeDto userChangeDto, Long expireSeconds) {
         RLock lock = redissonClient.getLock("lock:redis:" + userChangeDto.getUsername());
         boolean isLock = lock.tryLock();
         if(!isLock){
@@ -356,13 +366,18 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                 UserDto loginUser=new UserDto();
                 loginUser.setUsername(userChangeDto.getUsername());
                 loginUser.setPassword(MD5Util.encrypt(userChangeDto.getNew_password()));
-                //封装逻辑过期
-                RedisData redisData = new RedisData();
-                redisData.setData(loginUser);
-                redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
-                //写入Redis
-                stringRedisTemplate.opsForValue().set(CACHE_USER_KEY + loginUser.getUsername(),
-                        JSONUtil.toJsonStr(redisData));//这里设置的是自定义的过期时间
+                //将数据以哈希结构的形式存入,进行逻辑过期封装
+                Map<String,String> usermap=new HashMap<>();
+                usermap.put("username",loginUser.getUsername());
+                usermap.put("password",loginUser.getPassword());
+                //之所以又加一个对象接收逻辑过期是因为，直接序列化时间类会序列化失败，原因不清楚
+                RedisDataTime redisDataTime=new RedisDataTime();
+                redisDataTime.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds));
+                //插入定义好的逻辑过期时间
+                usermap.put("redisDataTime",JSONUtil.toJsonStr(redisDataTime));
+                String RedisKey=CACHE_USER_KEY + loginUser.getUsername();
+                //写入redis中
+                stringRedisTemplate.opsForHash().putAll(RedisKey, usermap);
                 return "redisRebuild";
             }
             return "passwordError";
@@ -372,9 +387,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             return "lockError";
         }
         finally {
-            Boolean isLocker=lock.isLocked();
-            Boolean isHeld=lock.isHeldByCurrentThread();
-            if (isLocker && isHeld){
+            if (lock.isLocked() && lock.isHeldByCurrentThread()){
                 // 释放锁
                 lock.unlock();
             }

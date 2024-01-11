@@ -11,7 +11,7 @@ spring:
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource
     druid:
-      url: jdbc:mysql://127.0.0.1:3306/login?useSSL=false&serverTimezone=UTC
+      url: jdbc:mysql://8.137.103.138:3306/login?useSSL=false&serverTimezone=UTC
       username: root
       password: root
       driver-class-name: com.mysql.cj.jdbc.Driver
@@ -35,7 +35,7 @@ spring:
 #redis配置
   data:
     redis:
-      host: r-2vciqp8wrks5e6l0z6pd.redis.cn-chengdu.rds.aliyuncs.com
+      host: 8.137.103.138
       port: 6379
       password: gFSVohWG20n
       lettuce:

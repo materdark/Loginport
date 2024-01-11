@@ -2,6 +2,7 @@ package com.example.springboot_team.dto;
 
 import lombok.Data;
 
+
 @Data
 public class UserDto {
     private Integer id;
@@ -9,4 +10,5 @@ public class UserDto {
     private String username;
     private String password;
     private String fingerPrintJs;
+    private String redisDataTime;
 }
