@@ -36,7 +36,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static com.example.springboot_team.utils.RedisConstants.*;
+import static com.example.springboot_team.utils.redis.RedisConstants.*;
 import static com.example.springboot_team.utils.result.ResultCodeEnum.*;
 import static com.example.springboot_team.utils.phone.SMSend.sendSms;
 
@@ -231,8 +231,8 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
         Map<Object,Object> userMap=stringRedisTemplate.opsForHash().entries(key);
         //2.判断是否存在于redis中
         if(userMap.isEmpty()){
-            LambdaQueryWrapper<user_list> lambdaQueryWrapper=new LambdaQueryWrapper<>();
-            //这里没有使用两个lambdaQueryWrapper而是直接用同一个，是因为mysql的连接很耗费性能，共用一个连接比较节省性能
+            //清空之前的查询条件
+            lambdaQueryWrapper.clear();
             lambdaQueryWrapper.eq(user_list::getUsername,username);
             user_list userList = userListMapper.selectOne(lambdaQueryWrapper);
             //3.判断是否存在于mysql中。这里使用两层if嵌套，
@@ -283,11 +283,8 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                 //6.3成功，开启独立线程，实现缓存重建
                 CACHE_REBUILD_EXECUTOR.submit(()->{
                     try {
-                        //清空之前的查询条件
-                        lambdaQueryWrapper.clear();
-                        lambdaQueryWrapper.eq(user_list::getUsername,userList.getUsername());
                         //从数据库中查询数据，将其同步更新到redis中
-                        user_list redisRebuild = userListMapper.selectOne(lambdaQueryWrapper);
+                        user_list redisRebuild = userList;
                         //将数据以哈希结构的形式存入,进行逻辑过期封装
                         Map<String,String> usermap=new HashMap<>();
                         usermap.put("username",redisRebuild.getUsername());

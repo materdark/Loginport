@@ -13,8 +13,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import static com.example.springboot_team.utils.RedisConstants.LOGIN_USER_KEY;
-import static com.example.springboot_team.utils.RedisConstants.LOGIN_USER_TTL;
+import static com.example.springboot_team.utils.redis.RedisConstants.LOGIN_USER_KEY;
+import static com.example.springboot_team.utils.redis.RedisConstants.LOGIN_USER_TTL;
 @CrossOrigin
 public class RefreshTokenInterceptor implements HandlerInterceptor {
     @Resource

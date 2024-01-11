@@ -1,4 +1,4 @@
-package com.example.springboot_team.utils;
+package com.example.springboot_team.utils.redis;
 //用来记录常用的常量
 public class RedisConstants {
     public static final String LOGIN_CODE_KEY = "login:code:";
