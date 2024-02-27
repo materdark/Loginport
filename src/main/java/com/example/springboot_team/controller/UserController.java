@@ -16,13 +16,10 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/frontapi/user")
 //设置路径为user
 public class UserController {
-
-
     @Resource
     private user_listService userListService;
     @Resource
     private user_phoneService userPhoneService;
-
     @PostMapping("login")
     public Result login(@RequestBody UserDto userDto) throws InterruptedException {
         Result result = userListService.login(userDto);

@@ -275,6 +275,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
      *  3.写入redis缓存中
      * @return
      */
+
         public void saveUserRedis(@NotNull user_list userList, Long expireSeconds) {
             //获取互斥锁,进行缓存重建
             RLock lock = redissonClient.getLock("lock:redis:" + userList.getUsername());
@@ -301,12 +302,12 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                         throw new RuntimeException(e);
                     }
                     finally {
-                        //判断是否释放线程锁的是否为获取线程锁的那个线程，防止其他线程过来解锁
-                        if (lock.isLocked() && lock.isHeldByCurrentThread()) {
-                            //释放锁
-                            lock.unlock();
+                            //判断是否释放线程锁的是否为获取线程锁的那个线程，防止其他线程过来解锁
+                            if (lock.isLocked() ) {
+                                //释放锁
+                                lock.unlock();
+                            }
                         }
-                    }
                 });
             }
     }
@@ -341,7 +342,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
                   return "redisRebuild";
               }
               finally {
-                  if (lock.isLocked() && lock.isHeldByCurrentThread()) {
+                  if (lock.isLocked()) {
                       // 释放锁
                       lock.unlock();
                   }
@@ -387,7 +388,7 @@ public class user_listServiceImpl extends ServiceImpl<user_listMapper, user_list
             return "lockError";
         }
         finally {
-            if (lock.isLocked() && lock.isHeldByCurrentThread()){
+            if (lock.isLocked()){
                 // 释放锁
                 lock.unlock();
             }

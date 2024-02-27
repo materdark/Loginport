@@ -11,12 +11,12 @@ spring:
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource
     druid:
-      url: jdbc:mysql://8.137.103.138:3306/login?useSSL=false&serverTimezone=UTC
+      url: jdbc:mysql://47.108.73.184:3306/login?useSSL=false&serverTimezone=UTC
       username: root
       password: root
       driver-class-name: com.mysql.cj.jdbc.Driver
   kafka:
-    bootstrap-servers: 8.137.103.138:9092
+    bootstrap-servers: 47.108.73.184:9092
     consumer:
       group-id: my-group
       auto-offset-reset: earliest # 设置消费者分组最初的消费进度为 earliest
@@ -35,7 +35,7 @@ spring:
 #redis配置
   data:
     redis:
-      host: 8.137.103.138
+      host: 47.108.73.184
       port: 6379
       password: gFSVohWG20n
       lettuce:
